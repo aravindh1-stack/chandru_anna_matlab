@@ -294,19 +294,19 @@ const App = () => {
     if (!isConnected || !feeds.length) return alerts;
 
     if (latestRawSpo2 !== null && latestRawSpo2 > 0 && latestRawSpo2 < ALERT_THRESHOLDS.spo2Low) {
-      alerts.push(`Low SpO2 detected (${latestRawSpo2.toFixed(0)}%).`);
+      alerts.push(`SpO2: ${latestRawSpo2.toFixed(0)}% (threshold: <${ALERT_THRESHOLDS.spo2Low}%)`);
     }
     if (latestRawHr !== null && latestRawHr > 0 && latestRawHr < ALERT_THRESHOLDS.hrLow) {
-      alerts.push(`Heart rate too low (${latestRawHr.toFixed(0)} BPM).`);
+      alerts.push(`Heart Rate: ${latestRawHr.toFixed(0)} BPM (threshold: <${ALERT_THRESHOLDS.hrLow} BPM)`);
     }
     if (latestRawHr !== null && latestRawHr > ALERT_THRESHOLDS.hrHigh) {
-      alerts.push(`Heart rate too high (${latestRawHr.toFixed(0)} BPM).`);
+      alerts.push(`Heart Rate: ${latestRawHr.toFixed(0)} BPM (threshold: >${ALERT_THRESHOLDS.hrHigh} BPM)`);
     }
     if (latestRawTemp !== null && latestRawTemp > ALERT_THRESHOLDS.tempHigh) {
-      alerts.push(`Temperature elevated (${latestRawTemp.toFixed(1)}°C).`);
+      alerts.push(`Temperature: ${latestRawTemp.toFixed(1)}°C (threshold: >${ALERT_THRESHOLDS.tempHigh}°C)`);
     }
     if (latestRawTemp === null) {
-      alerts.push("Temperature signal unavailable. Check sensor and field mapping.");
+      alerts.push("Temperature: unavailable (sensor/mapping error)");
     }
 
     return alerts;
