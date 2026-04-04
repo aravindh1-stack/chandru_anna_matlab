@@ -4,6 +4,7 @@ import { Activity, Droplets, Thermometer, Wifi, Clock, Sparkles } from "lucide-r
 import Chart from "react-apexcharts";
 
 const DEFAULT_CHANNEL_ID = "3281642";
+const DEFAULT_READ_API_KEY = "L3VW2XW8YKLYXPM1";
 const DEFAULT_REFRESH_SEC = 15;
 const MAX_RESULTS = 30;
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
@@ -155,7 +156,7 @@ const AlertPopup = ({ alerts, onClose, onSnooze }) => (
 
 const App = () => {
   const [channelIdInput, setChannelIdInput] = useState(() => localStorage.getItem(STORAGE_KEYS.channelId) || DEFAULT_CHANNEL_ID);
-  const [readApiKeyInput, setReadApiKeyInput] = useState("");
+  const [readApiKeyInput, setReadApiKeyInput] = useState(DEFAULT_READ_API_KEY);
   const [refreshSecInput, setRefreshSecInput] = useState(() => Number(localStorage.getItem(STORAGE_KEYS.refreshSec) || DEFAULT_REFRESH_SEC));
 
   const [activeChannelId, setActiveChannelId] = useState(channelIdInput);
@@ -166,8 +167,8 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState("Not Connected");
   const [error, setError] = useState("");
-  const [snoozedUntilMs, setSnoozedUntilMs] = useState(0);
-  const [dismissedAlertKey, setDismissedAlertKey] = useState("");
+  const [popupMutedUntilMs, setPopupMutedUntilMs] = useState(0);
+  const [lastNativeAlertKey, setLastNativeAlertKey] = useState("");
 
   useEffect(() => {
     if (!isConnected) {
@@ -187,7 +188,7 @@ const App = () => {
         setError("");
       } catch (error) {
         setConnectionStatus("Connection Failed");
-        setError("Unable to fetch data. Ensure backend is running: npm run api, and frontend via npm run dev.");
+        setError("Unable to fetch data. Start the app with npm run dev so frontend and backend run together.");
         console.error(error);
       } finally {
         setLoading(false);
@@ -252,7 +253,7 @@ const App = () => {
         setError("");
       } catch {
         setConnectionStatus("Connection Failed");
-        setError("Cannot reach the backend server. Start it with: npm run api");
+        setError("Cannot reach the backend server. Start the app with npm run dev.");
         setLoading(false);
         setIsConnected(false);
       }
@@ -303,22 +304,35 @@ const App = () => {
   const alertKey = activeAlerts.join("|");
 
   useEffect(() => {
-    setDismissedAlertKey("");
-  }, [alertKey]);
+    if (!activeAlerts.length || !alertKey) {
+      return;
+    }
+
+    if (alertKey === lastNativeAlertKey) {
+      return;
+    }
+
+    setLastNativeAlertKey(alertKey);
+
+    // Native fallback popup for critical visibility in case modal layering fails.
+    if (typeof window !== "undefined" && typeof window.alert === "function") {
+      window.alert(`Critical Alert\n\n${activeAlerts.join("\n")}`);
+    }
+  }, [activeAlerts, alertKey, lastNativeAlertKey]);
 
   useEffect(() => {
-    if (!snoozedUntilMs) {
+    if (!popupMutedUntilMs) {
       return undefined;
     }
 
     const timeoutId = window.setTimeout(() => {
-      setSnoozedUntilMs(0);
-    }, Math.max(0, snoozedUntilMs - Date.now()));
+      setPopupMutedUntilMs(0);
+    }, Math.max(0, popupMutedUntilMs - Date.now()));
 
     return () => window.clearTimeout(timeoutId);
-  }, [snoozedUntilMs]);
+  }, [popupMutedUntilMs]);
 
-  const shouldShowAlertPopup = activeAlerts.length > 0 && !snoozedUntilMs && alertKey !== dismissedAlertKey;
+  const shouldShowAlertPopup = activeAlerts.length > 0 && Date.now() >= popupMutedUntilMs;
 
   const categories = feeds.map((feed) =>
     new Date(feed.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -428,10 +442,9 @@ const App = () => {
         ? createPortal(
             <AlertPopup
               alerts={activeAlerts}
-              onClose={() => setDismissedAlertKey(alertKey)}
+              onClose={() => setPopupMutedUntilMs(Date.now() + 15 * 1000)}
               onSnooze={() => {
-                setSnoozedUntilMs(Date.now() + 2 * 60 * 1000);
-                setDismissedAlertKey(alertKey);
+                setPopupMutedUntilMs(Date.now() + 2 * 60 * 1000);
               }}
             />,
             document.body

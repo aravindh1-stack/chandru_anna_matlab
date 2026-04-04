@@ -1,16 +1,19 @@
 import express from "express";
 import dotenv from "dotenv";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
+const isDirectExecution = process.argv[1] ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false;
 
 app.use(express.json());
 
 const config = {
   channelId: process.env.THINGSPEAK_CHANNEL_ID || "3281642",
-  readApiKey: process.env.THINGSPEAK_READ_API_KEY || "",
+  readApiKey: process.env.THINGSPEAK_READ_API_KEY || "L3VW2XW8YKLYXPM1",
 };
 
 const isValidReadApiKey = (key) => /^[A-Za-z0-9]{16}$/.test(key);
@@ -84,7 +87,7 @@ app.post("/api/config", async (req, res) => {
     if (!tsData.channel) {
       return res.status(400).json({ ok: false, error: "Could not verify channel. Check your Channel ID and API Key." });
     }
-  } catch (fetchError) {
+  } catch {
     return res.status(503).json({ ok: false, error: "Could not reach ThingSpeak to verify credentials. Check your internet connection." });
   }
 
@@ -107,11 +110,15 @@ app.get("/api/feeds", async (req, res) => {
 
     const payload = await response.json();
     return res.json({ ok: true, channelId: config.channelId, feeds: payload.feeds || [] });
-  } catch (error) {
+  } catch {
     return res.status(500).json({ ok: false, error: "Server failed to fetch ThingSpeak data" });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`ThingSpeak proxy API running on http://localhost:${PORT}`);
-});
+if (isDirectExecution) {
+  app.listen(PORT, () => {
+    console.log(`ThingSpeak proxy API running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
