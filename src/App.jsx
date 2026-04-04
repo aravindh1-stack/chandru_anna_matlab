@@ -313,6 +313,18 @@ const App = () => {
 
   const shouldShowAlertPopup = activeAlerts.length > 0 && Date.now() >= popupMutedUntilMs;
 
+  useEffect(() => {
+    if (!popupMutedUntilMs) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setPopupMutedUntilMs(0);
+    }, Math.max(0, popupMutedUntilMs - Date.now()));
+
+    return () => window.clearTimeout(timeoutId);
+  }, [popupMutedUntilMs]);
+
   const categories = feeds.map((feed) =>
     new Date(feed.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
   );
