@@ -169,7 +169,6 @@ const App = () => {
   const [error, setError] = useState("");
   const [apiError, setApiError] = useState("");
   const [popupMutedUntilMs, setPopupMutedUntilMs] = useState(0);
-  const [lastNativeAlertKey, setLastNativeAlertKey] = useState("");
 
   useEffect(() => {
     if (!isConnected) {
@@ -311,38 +310,6 @@ const App = () => {
 
     return alerts;
   }, [feeds.length, isConnected, latestRawHr, latestRawSpo2, latestRawTemp, apiError]);
-
-  const alertKey = activeAlerts.join("|");
-
-  useEffect(() => {
-    if (!activeAlerts.length || !alertKey) {
-      setLastNativeAlertKey("");
-      return;
-    }
-
-    if (alertKey === lastNativeAlertKey) {
-      return;
-    }
-
-    setLastNativeAlertKey(alertKey);
-    setPopupMutedUntilMs(0);
-
-    if (typeof window !== "undefined" && typeof window.alert === "function") {
-      window.alert(`Critical Alert\n\n${activeAlerts.join("\n")}`);
-    }
-  }, [activeAlerts, alertKey, lastNativeAlertKey]);
-
-  useEffect(() => {
-    if (!popupMutedUntilMs) {
-      return undefined;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setPopupMutedUntilMs(0);
-    }, Math.max(0, popupMutedUntilMs - Date.now()));
-
-    return () => window.clearTimeout(timeoutId);
-  }, [popupMutedUntilMs]);
 
   const shouldShowAlertPopup = activeAlerts.length > 0 && Date.now() >= popupMutedUntilMs;
 
