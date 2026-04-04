@@ -188,7 +188,7 @@ const App = () => {
         setError("");
       } catch (error) {
         setConnectionStatus("Connection Failed");
-        setError("Unable to fetch data. Start the app with npm run dev so frontend and backend run together.");
+        setError("Unable to fetch data. API service is unreachable. On Vercel, confirm /api routes are deployed.");
         console.error(error);
       } finally {
         setLoading(false);
@@ -253,7 +253,7 @@ const App = () => {
         setError("");
       } catch {
         setConnectionStatus("Connection Failed");
-        setError("Cannot reach the backend server. Start the app with npm run dev.");
+        setError("Cannot reach API service. On Vercel, confirm deployment includes serverless /api routes.");
         setLoading(false);
         setIsConnected(false);
       }
