@@ -188,7 +188,7 @@ const App = () => {
         setError("");
       } catch (error) {
         setConnectionStatus("Connection Failed");
-        setError("Unable to fetch data. API service is unreachable. On Vercel, confirm /api routes are deployed.");
+        setError("Unable to fetch data. Please check your internet connection or deployment status.");
         console.error(error);
       } finally {
         setLoading(false);
@@ -253,7 +253,7 @@ const App = () => {
         setError("");
       } catch {
         setConnectionStatus("Connection Failed");
-        setError("Cannot reach API service. On Vercel, confirm deployment includes serverless /api routes.");
+        setError("Connection failed. Please verify API deployment and try again.");
         setLoading(false);
         setIsConnected(false);
       }
