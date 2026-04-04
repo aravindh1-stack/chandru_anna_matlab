@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Activity, Droplets, Thermometer, Wifi, Clock, Sparkles } from "lucide-react";
 import Chart from "react-apexcharts";
 
@@ -7,6 +8,12 @@ const DEFAULT_REFRESH_SEC = 15;
 const MAX_RESULTS = 30;
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const READ_KEY_REGEX = /^[A-Za-z0-9]{16}$/;
+const ALERT_THRESHOLDS = {
+  spo2Low: 92,
+  hrLow: 50,
+  hrHigh: 100,
+  tempHigh: 38.2,
+};
 const STORAGE_KEYS = {
   channelId: "aarga.thingspeak.channelId",
   refreshSec: "aarga.thingspeak.refreshSec",
@@ -20,11 +27,6 @@ const convertTemp = (adc) => {
   if (!Number.isFinite(resistance) || resistance <= 0) return null;
   const temp = 1.0 / (Math.log(resistance / 10000) / 3950 + 1.0 / (25 + 273.15)) - 273.15;
   return Number.isFinite(temp) ? Number(temp.toFixed(1)) : null;
-};
-
-const toNum = (value) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
 };
 
 const toNumOrNull = (value) => {
@@ -51,6 +53,15 @@ const smoothSeries = (values, windowSize = 3) => {
     const sum = window.reduce((total, value) => total + value, 0);
     return Number((sum / window.length).toFixed(2));
   });
+};
+
+const getLatestFinite = (values) => {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (Number.isFinite(values[index])) {
+      return values[index];
+    }
+  }
+  return null;
 };
 
 const Pill = ({ children, tone = "slate" }) => {
@@ -108,6 +119,40 @@ const TrendCard = ({ title, subTitle, options, series, type = "area", height = 2
   </article>
 );
 
+const AlertPopup = ({ alerts, onClose, onSnooze }) => (
+  <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+    <div className="w-full max-w-lg rounded-3xl border border-rose-300 bg-white shadow-2xl">
+      <div className="border-b border-rose-200 bg-rose-50 px-5 py-4">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-rose-700">Disclaimer Alert</p>
+        <h3 className="mt-1 text-xl font-extrabold text-rose-900">Patient Vitals Need Attention</h3>
+        <p className="mt-2 text-xs font-medium text-rose-700">
+          Please verify sensor placement and patient condition before clinical action.
+        </p>
+      </div>
+
+      <div className="space-y-2 px-5 py-4">
+        {alerts.map((alertText) => (
+          <p key={alertText} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">
+            {alertText}
+          </p>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-end gap-2 px-5 pb-5 pt-1">
+        <button
+          className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
+          onClick={onSnooze}
+        >
+          Snooze 2 min
+        </button>
+        <button className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white" onClick={onClose}>
+          Acknowledge
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
 const App = () => {
   const [channelIdInput, setChannelIdInput] = useState(() => localStorage.getItem(STORAGE_KEYS.channelId) || DEFAULT_CHANNEL_ID);
   const [readApiKeyInput, setReadApiKeyInput] = useState("");
@@ -121,6 +166,8 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState("Not Connected");
   const [error, setError] = useState("");
+  const [snoozedUntilMs, setSnoozedUntilMs] = useState(0);
+  const [dismissedAlertKey, setDismissedAlertKey] = useState("");
 
   useEffect(() => {
     if (!isConnected) {
@@ -203,7 +250,7 @@ const App = () => {
         setActiveRefreshSec(nextRefresh);
         setIsConnected(true);
         setError("");
-      } catch (requestError) {
+      } catch {
         setConnectionStatus("Connection Failed");
         setError("Cannot reach the backend server. Start it with: npm run api");
         setLoading(false);
@@ -218,6 +265,10 @@ const App = () => {
   const rawHr = feeds.map((feed) => toNumOrNull(feed.field2));
   const rawTemp = feeds.map((feed) => convertTemp(Number(feed.field3)));
 
+  const latestRawSpo2 = getLatestFinite(rawSpo2);
+  const latestRawHr = getLatestFinite(rawHr);
+  const latestRawTemp = getLatestFinite(rawTemp);
+
   const spo2SeriesData = smoothSeries(sanitizeSeries(rawSpo2, 60, 100), 3);
   const hrSeriesData = smoothSeries(sanitizeSeries(rawHr, 35, 220), 3);
   const tempSeriesData = smoothSeries(sanitizeSeries(rawTemp, 20, 50), 3);
@@ -225,6 +276,49 @@ const App = () => {
   const latestSpo2 = spo2SeriesData[spo2SeriesData.length - 1] ?? 0;
   const latestHr = hrSeriesData[hrSeriesData.length - 1] ?? 0;
   const latestTemp = tempSeriesData[tempSeriesData.length - 1] ?? null;
+
+  const activeAlerts = useMemo(() => {
+    const alerts = [];
+    if (!isConnected || !feeds.length) return alerts;
+
+    if (latestRawSpo2 !== null && latestRawSpo2 > 0 && latestRawSpo2 < ALERT_THRESHOLDS.spo2Low) {
+      alerts.push(`Low SpO2 detected (${latestRawSpo2.toFixed(0)}%).`);
+    }
+    if (latestRawHr !== null && latestRawHr > 0 && latestRawHr < ALERT_THRESHOLDS.hrLow) {
+      alerts.push(`Heart rate too low (${latestRawHr.toFixed(0)} BPM).`);
+    }
+    if (latestRawHr !== null && latestRawHr > ALERT_THRESHOLDS.hrHigh) {
+      alerts.push(`Heart rate too high (${latestRawHr.toFixed(0)} BPM).`);
+    }
+    if (latestRawTemp !== null && latestRawTemp > ALERT_THRESHOLDS.tempHigh) {
+      alerts.push(`Temperature elevated (${latestRawTemp.toFixed(1)}°C).`);
+    }
+    if (latestRawTemp === null) {
+      alerts.push("Temperature signal unavailable. Check sensor and field mapping.");
+    }
+
+    return alerts;
+  }, [feeds.length, isConnected, latestRawHr, latestRawSpo2, latestRawTemp]);
+
+  const alertKey = activeAlerts.join("|");
+
+  useEffect(() => {
+    setDismissedAlertKey("");
+  }, [alertKey]);
+
+  useEffect(() => {
+    if (!snoozedUntilMs) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setSnoozedUntilMs(0);
+    }, Math.max(0, snoozedUntilMs - Date.now()));
+
+    return () => window.clearTimeout(timeoutId);
+  }, [snoozedUntilMs]);
+
+  const shouldShowAlertPopup = activeAlerts.length > 0 && !snoozedUntilMs && alertKey !== dismissedAlertKey;
 
   const categories = feeds.map((feed) =>
     new Date(feed.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -330,6 +424,20 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-8">
+      {shouldShowAlertPopup && typeof document !== "undefined"
+        ? createPortal(
+            <AlertPopup
+              alerts={activeAlerts}
+              onClose={() => setDismissedAlertKey(alertKey)}
+              onSnooze={() => {
+                setSnoozedUntilMs(Date.now() + 2 * 60 * 1000);
+                setDismissedAlertKey(alertKey);
+              }}
+            />,
+            document.body
+          )
+        : null}
+
       <div className="mx-auto max-w-[1320px] space-y-8">
         <header className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 md:p-8 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div className="flex items-center gap-4">
@@ -394,7 +502,7 @@ const App = () => {
         </section>
 
         <main className="grid grid-cols-1 xl:grid-cols-12 gap-7">
-          <section className="xl:col-span-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <section className="xl:col-span-8 flex flex-col lg:flex-row gap-6">
             <MetricCard
               title="SpO2"
               value={`${latestSpo2.toFixed(0)}%`}
