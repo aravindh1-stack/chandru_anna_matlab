@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import { Activity, Droplets, Thermometer, Wifi, Clock, Sparkles } from "lucide-react";
 import Chart from "react-apexcharts";
 
@@ -120,34 +119,35 @@ const TrendCard = ({ title, subTitle, options, series, type = "area", height = 2
   </article>
 );
 
-const AlertPopup = ({ alerts, onClose, onSnooze }) => (
-  <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
-    <div className="w-full max-w-lg rounded-3xl border border-rose-300 bg-white shadow-2xl">
-      <div className="border-b border-rose-200 bg-rose-50 px-5 py-4">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-rose-700">Disclaimer Alert</p>
-        <h3 className="mt-1 text-xl font-extrabold text-rose-900">Patient Vitals Need Attention</h3>
-        <p className="mt-2 text-xs font-medium text-rose-700">
-          Please verify sensor placement and patient condition before clinical action.
-        </p>
+const AlertPage = ({ alerts, onAcknowledge, onSnooze, onBack }) => (
+  <div className="min-h-screen bg-rose-50 p-4 md:p-8">
+    <div className="mx-auto max-w-3xl rounded-3xl border border-rose-300 bg-white shadow-2xl overflow-hidden">
+      <div className="bg-rose-600 px-6 py-5 text-white">
+        <p className="text-xs font-bold uppercase tracking-[0.2em]">Critical Alert Page</p>
+        <h1 className="mt-2 text-2xl md:text-3xl font-black">Patient Vitals Need Attention</h1>
+        <p className="mt-2 text-sm text-rose-100">Review all alerts before returning to dashboard.</p>
       </div>
 
-      <div className="space-y-2 px-5 py-4">
+      <div className="space-y-3 px-6 py-6">
         {alerts.map((alertText) => (
-          <p key={alertText} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">
+          <p key={alertText} className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">
             {alertText}
           </p>
         ))}
       </div>
 
-      <div className="flex items-center justify-end gap-2 px-5 pb-5 pt-1">
+      <div className="flex flex-wrap items-center justify-end gap-2 px-6 pb-6 pt-1">
+        <button className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700" onClick={onBack}>
+          Back to Dashboard
+        </button>
         <button
           className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
-          onClick={onSnooze}
+          onClick={onAcknowledge}
         >
-          Snooze 2 min
+          Acknowledge 15 sec
         </button>
-        <button className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white" onClick={onClose}>
-          Acknowledge
+        <button className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white" onClick={onSnooze}>
+          Snooze 2 min
         </button>
       </div>
     </div>
@@ -169,6 +169,7 @@ const App = () => {
   const [error, setError] = useState("");
   const [apiError, setApiError] = useState("");
   const [popupMutedUntilMs, setPopupMutedUntilMs] = useState(0);
+  const [pageMode, setPageMode] = useState("home");
 
   useEffect(() => {
     if (!isConnected) {
@@ -314,6 +315,18 @@ const App = () => {
   const shouldShowAlertPopup = activeAlerts.length > 0 && Date.now() >= popupMutedUntilMs;
 
   useEffect(() => {
+    if (shouldShowAlertPopup) {
+      setPageMode("alert");
+    }
+  }, [shouldShowAlertPopup]);
+
+  useEffect(() => {
+    if (pageMode === "alert" && !activeAlerts.length) {
+      setPageMode("home");
+    }
+  }, [activeAlerts.length, pageMode]);
+
+  useEffect(() => {
     if (!popupMutedUntilMs) {
       return undefined;
     }
@@ -428,19 +441,21 @@ const App = () => {
   };
 
   return (
+    pageMode === "alert" ? (
+      <AlertPage
+        alerts={activeAlerts}
+        onBack={() => setPageMode("home")}
+        onAcknowledge={() => {
+          setPopupMutedUntilMs(Date.now() + 15 * 1000);
+          setPageMode("home");
+        }}
+        onSnooze={() => {
+          setPopupMutedUntilMs(Date.now() + 2 * 60 * 1000);
+          setPageMode("home");
+        }}
+      />
+    ) : (
     <div className="min-h-screen bg-slate-100 p-4 md:p-8">
-      {shouldShowAlertPopup && typeof document !== "undefined"
-        ? createPortal(
-            <AlertPopup
-              alerts={activeAlerts}
-              onClose={() => setPopupMutedUntilMs(Date.now() + 15 * 1000)}
-              onSnooze={() => {
-                setPopupMutedUntilMs(Date.now() + 2 * 60 * 1000);
-              }}
-            />,
-            document.body
-          )
-        : null}
 
       <div className="mx-auto max-w-[1320px] space-y-8">
         <header className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 md:p-8 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
@@ -454,6 +469,14 @@ const App = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {activeAlerts.length ? (
+              <button
+                className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700"
+                onClick={() => setPageMode("alert")}
+              >
+                Open Alert Page ({activeAlerts.length})
+              </button>
+            ) : null}
             <Pill tone="emerald">
               <span className="inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
               System Live
@@ -597,6 +620,7 @@ const App = () => {
         </main>
       </div>
     </div>
+    )
   );
 };
 
