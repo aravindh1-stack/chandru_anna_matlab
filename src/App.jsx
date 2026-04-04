@@ -167,6 +167,7 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState("Not Connected");
   const [error, setError] = useState("");
+  const [apiError, setApiError] = useState("");
   const [popupMutedUntilMs, setPopupMutedUntilMs] = useState(0);
   const [lastNativeAlertKey, setLastNativeAlertKey] = useState("");
 
@@ -186,9 +187,11 @@ const App = () => {
         setActiveChannelId(data.channelId || activeChannelId);
         setConnectionStatus("Connected");
         setError("");
+        setApiError("");
       } catch (error) {
         setConnectionStatus("Connection Failed");
         setError("Unable to fetch data. Please check your internet connection or deployment status.");
+        setApiError("API connection lost. Please verify deployment and network connectivity.");
         console.error(error);
       } finally {
         setLoading(false);
@@ -239,6 +242,7 @@ const App = () => {
         if (!response.ok || !data.ok) {
           setConnectionStatus("Authentication Failed");
           setError(data.error || "Connection rejected by server.");
+          setApiError(data.error || "Authentication failed. Please verify your credentials.");
           setLoading(false);
           setIsConnected(false);
           return;
@@ -251,9 +255,11 @@ const App = () => {
         setActiveRefreshSec(nextRefresh);
         setIsConnected(true);
         setError("");
+        setApiError("");
       } catch {
         setConnectionStatus("Connection Failed");
         setError("Connection failed. Please verify API deployment and try again.");
+        setApiError("Connection failed. API may not be deployed or network is unavailable.");
         setLoading(false);
         setIsConnected(false);
       }
@@ -280,6 +286,11 @@ const App = () => {
 
   const activeAlerts = useMemo(() => {
     const alerts = [];
+
+    if (apiError) {
+      alerts.push(apiError);
+    }
+
     if (!isConnected || !feeds.length) return alerts;
 
     if (latestRawSpo2 !== null && latestRawSpo2 > 0 && latestRawSpo2 < ALERT_THRESHOLDS.spo2Low) {
@@ -299,12 +310,13 @@ const App = () => {
     }
 
     return alerts;
-  }, [feeds.length, isConnected, latestRawHr, latestRawSpo2, latestRawTemp]);
+  }, [feeds.length, isConnected, latestRawHr, latestRawSpo2, latestRawTemp, apiError]);
 
   const alertKey = activeAlerts.join("|");
 
   useEffect(() => {
     if (!activeAlerts.length || !alertKey) {
+      setLastNativeAlertKey("");
       return;
     }
 
@@ -313,8 +325,8 @@ const App = () => {
     }
 
     setLastNativeAlertKey(alertKey);
+    setPopupMutedUntilMs(0);
 
-    // Native fallback popup for critical visibility in case modal layering fails.
     if (typeof window !== "undefined" && typeof window.alert === "function") {
       window.alert(`Critical Alert\n\n${activeAlerts.join("\n")}`);
     }
