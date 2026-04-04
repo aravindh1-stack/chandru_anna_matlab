@@ -19,12 +19,23 @@ const STORAGE_KEYS = {
   refreshSec: "aarga.thingspeak.refreshSec",
 };
 
-const convertTemp = (adc) => {
-  if (!adc || adc <= 0) return null;
-  const voltage = adc * (3.3 / 1023.0);
+const convertTemp = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+
+  // Accept direct Celsius values when the device already sends temperature.
+  if (parsed >= 20 && parsed <= 50) {
+    return Number(parsed.toFixed(1));
+  }
+
+  // Otherwise, treat field3 as ADC and convert through NTC formula.
+  if (parsed <= 0) return null;
+  const voltage = parsed * (3.3 / 1023.0);
   if (voltage <= 0) return null;
+
   const resistance = ((3.3 - voltage) * 10000) / voltage;
   if (!Number.isFinite(resistance) || resistance <= 0) return null;
+
   const temp = 1.0 / (Math.log(resistance / 10000) / 3950 + 1.0 / (25 + 273.15)) - 273.15;
   return Number.isFinite(temp) ? Number(temp.toFixed(1)) : null;
 };
@@ -53,15 +64,6 @@ const smoothSeries = (values, windowSize = 3) => {
     const sum = window.reduce((total, value) => total + value, 0);
     return Number((sum / window.length).toFixed(2));
   });
-};
-
-const getLatestFinite = (values) => {
-  for (let index = values.length - 1; index >= 0; index -= 1) {
-    if (Number.isFinite(values[index])) {
-      return values[index];
-    }
-  }
-  return null;
 };
 
 const Pill = ({ children, tone = "slate" }) => {
@@ -119,13 +121,13 @@ const TrendCard = ({ title, subTitle, options, series, type = "area", height = 2
   </article>
 );
 
-const AlertPage = ({ alerts, onAcknowledge, onSnooze, onBack }) => (
-  <div className="min-h-screen bg-rose-50 p-4 md:p-8">
-    <div className="mx-auto max-w-3xl rounded-3xl border border-rose-300 bg-white shadow-2xl overflow-hidden">
+const AlertPopup = ({ alerts, onAcknowledge, onSnooze }) => (
+  <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+    <div className="w-full max-w-3xl rounded-3xl border border-rose-300 bg-white shadow-2xl overflow-hidden">
       <div className="bg-rose-600 px-6 py-5 text-white">
-        <p className="text-xs font-bold uppercase tracking-[0.2em]">Critical Alert Page</p>
+        <p className="text-xs font-bold uppercase tracking-[0.2em]">Critical Alert</p>
         <h1 className="mt-2 text-2xl md:text-3xl font-black">Patient Vitals Need Attention</h1>
-        <p className="mt-2 text-sm text-rose-100">Review all alerts before returning to dashboard.</p>
+        <p className="mt-2 text-sm text-rose-100">Review all alerts before continuing.</p>
       </div>
 
       <div className="space-y-3 px-6 py-6">
@@ -137,9 +139,6 @@ const AlertPage = ({ alerts, onAcknowledge, onSnooze, onBack }) => (
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2 px-6 pb-6 pt-1">
-        <button className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700" onClick={onBack}>
-          Back to Dashboard
-        </button>
         <button
           className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
           onClick={onAcknowledge}
@@ -169,7 +168,7 @@ const App = () => {
   const [error, setError] = useState("");
   const [apiError, setApiError] = useState("");
   const [popupMutedUntilMs, setPopupMutedUntilMs] = useState(0);
-  const [pageMode, setPageMode] = useState("home");
+  const [lastAlertSignature, setLastAlertSignature] = useState("");
 
   useEffect(() => {
     if (!isConnected) {
@@ -270,11 +269,7 @@ const App = () => {
 
   const rawSpo2 = feeds.map((feed) => toNumOrNull(feed.field1));
   const rawHr = feeds.map((feed) => toNumOrNull(feed.field2));
-  const rawTemp = feeds.map((feed) => convertTemp(Number(feed.field3)));
-
-  const latestRawSpo2 = getLatestFinite(rawSpo2);
-  const latestRawHr = getLatestFinite(rawHr);
-  const latestRawTemp = getLatestFinite(rawTemp);
+  const rawTemp = feeds.map((feed) => convertTemp(feed.field3));
 
   const spo2SeriesData = smoothSeries(sanitizeSeries(rawSpo2, 60, 100), 3);
   const hrSeriesData = smoothSeries(sanitizeSeries(rawHr, 35, 220), 3);
@@ -293,38 +288,40 @@ const App = () => {
 
     if (!isConnected || !feeds.length) return alerts;
 
-    if (latestRawSpo2 !== null && latestRawSpo2 > 0 && latestRawSpo2 < ALERT_THRESHOLDS.spo2Low) {
-      alerts.push(`SpO2: ${latestRawSpo2.toFixed(0)}% (threshold: <${ALERT_THRESHOLDS.spo2Low}%)`);
+    if (latestSpo2 > 0 && latestSpo2 < ALERT_THRESHOLDS.spo2Low) {
+      alerts.push(`SpO2: ${latestSpo2.toFixed(0)}% (threshold: <${ALERT_THRESHOLDS.spo2Low}%)`);
     }
-    if (latestRawHr !== null && latestRawHr > 0 && latestRawHr < ALERT_THRESHOLDS.hrLow) {
-      alerts.push(`Heart Rate: ${latestRawHr.toFixed(0)} BPM (threshold: <${ALERT_THRESHOLDS.hrLow} BPM)`);
+    if (latestHr > 0 && latestHr < ALERT_THRESHOLDS.hrLow) {
+      alerts.push(`Heart Rate: ${latestHr.toFixed(0)} BPM (threshold: <${ALERT_THRESHOLDS.hrLow} BPM)`);
     }
-    if (latestRawHr !== null && latestRawHr > ALERT_THRESHOLDS.hrHigh) {
-      alerts.push(`Heart Rate: ${latestRawHr.toFixed(0)} BPM (threshold: >${ALERT_THRESHOLDS.hrHigh} BPM)`);
+    if (latestHr > ALERT_THRESHOLDS.hrHigh) {
+      alerts.push(`Heart Rate: ${latestHr.toFixed(0)} BPM (threshold: >${ALERT_THRESHOLDS.hrHigh} BPM)`);
     }
-    if (latestRawTemp !== null && latestRawTemp > ALERT_THRESHOLDS.tempHigh) {
-      alerts.push(`Temperature: ${latestRawTemp.toFixed(1)}°C (threshold: >${ALERT_THRESHOLDS.tempHigh}°C)`);
+    if (latestTemp !== null && latestTemp > ALERT_THRESHOLDS.tempHigh) {
+      alerts.push(`Temperature: ${latestTemp.toFixed(1)}°C (threshold: >${ALERT_THRESHOLDS.tempHigh}°C)`);
     }
-    if (latestRawTemp === null) {
+    if (latestTemp === null) {
       alerts.push("Temperature: unavailable (sensor/mapping error)");
     }
 
     return alerts;
-  }, [feeds.length, isConnected, latestRawHr, latestRawSpo2, latestRawTemp, apiError]);
+  }, [feeds.length, isConnected, latestHr, latestSpo2, latestTemp, apiError]);
 
   const shouldShowAlertPopup = activeAlerts.length > 0 && Date.now() >= popupMutedUntilMs;
 
   useEffect(() => {
-    if (shouldShowAlertPopup) {
-      setPageMode("alert");
-    }
-  }, [shouldShowAlertPopup]);
+    const signature = activeAlerts.join("|");
 
-  useEffect(() => {
-    if (pageMode === "alert" && !activeAlerts.length) {
-      setPageMode("home");
+    if (!signature) {
+      setLastAlertSignature("");
+      return;
     }
-  }, [activeAlerts.length, pageMode]);
+
+    if (signature !== lastAlertSignature) {
+      setLastAlertSignature(signature);
+      setPopupMutedUntilMs(0);
+    }
+  }, [activeAlerts, lastAlertSignature]);
 
   useEffect(() => {
     if (!popupMutedUntilMs) {
@@ -351,7 +348,12 @@ const App = () => {
         animations: { enabled: false },
       },
       dataLabels: { enabled: false },
-      stroke: { curve: "smooth", width: 3 },
+      stroke: { curve: "smooth", width: 4, lineCap: "round" },
+      markers: {
+        size: 3,
+        strokeWidth: 0,
+        hover: { size: 5 },
+      },
       fill: {
         type: "gradient",
         gradient: {
@@ -383,6 +385,10 @@ const App = () => {
         strokeDashArray: 4,
       },
       tooltip: { theme: "light" },
+      noData: {
+        text: "Waiting for live data...",
+        style: { color: "#64748b", fontSize: "13px" },
+      },
     }),
     [categories]
   );
@@ -417,7 +423,7 @@ const App = () => {
   const spo2Options = {
     ...baseChartOptions,
     colors: ["#4f46e5"],
-    yaxis: { ...baseChartOptions.yaxis, max: 100 },
+    yaxis: { ...baseChartOptions.yaxis, min: 85, max: 100, tickAmount: 3 },
   };
 
   const hrOptions = {
@@ -429,33 +435,49 @@ const App = () => {
   const tempOptions = {
     ...baseChartOptions,
     colors: ["#10b981"],
-    yaxis: { ...baseChartOptions.yaxis, max: 50 },
+    yaxis: { ...baseChartOptions.yaxis, min: 20, max: 45, tickAmount: 5 },
   };
 
   const combinedOptions = {
     ...baseChartOptions,
     colors: ["#4f46e5", "#334155", "#10b981"],
-    stroke: { curve: "smooth", width: 2 },
+    stroke: { curve: "smooth", width: 3, lineCap: "round" },
     fill: { ...baseChartOptions.fill, opacity: 0.1 },
     legend: { show: true, position: "top" },
+    yaxis: [
+      {
+        min: 85,
+        max: 100,
+        labels: { style: { colors: "#4f46e5", fontSize: "11px" } },
+      },
+      {
+        opposite: true,
+        min: 35,
+        max: 200,
+        labels: { style: { colors: "#334155", fontSize: "11px" } },
+      },
+      {
+        opposite: true,
+        min: 20,
+        max: 45,
+        labels: { style: { colors: "#10b981", fontSize: "11px" } },
+      },
+    ],
   };
 
   return (
-    pageMode === "alert" ? (
-      <AlertPage
-        alerts={activeAlerts}
-        onBack={() => setPageMode("home")}
-        onAcknowledge={() => {
-          setPopupMutedUntilMs(Date.now() + 15 * 1000);
-          setPageMode("home");
-        }}
-        onSnooze={() => {
-          setPopupMutedUntilMs(Date.now() + 2 * 60 * 1000);
-          setPageMode("home");
-        }}
-      />
-    ) : (
     <div className="min-h-screen bg-slate-100 p-4 md:p-8">
+      {shouldShowAlertPopup ? (
+        <AlertPopup
+          alerts={activeAlerts}
+          onAcknowledge={() => {
+            setPopupMutedUntilMs(Date.now() + 15 * 1000);
+          }}
+          onSnooze={() => {
+            setPopupMutedUntilMs(Date.now() + 2 * 60 * 1000);
+          }}
+        />
+      ) : null}
 
       <div className="mx-auto max-w-[1320px] space-y-8">
         <header className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 md:p-8 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
@@ -469,14 +491,7 @@ const App = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {activeAlerts.length ? (
-              <button
-                className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700"
-                onClick={() => setPageMode("alert")}
-              >
-                Open Alert Page ({activeAlerts.length})
-              </button>
-            ) : null}
+            {activeAlerts.length ? <Pill tone="slate">Alert Active: {activeAlerts.length}</Pill> : null}
             <Pill tone="emerald">
               <span className="inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
               System Live
@@ -620,7 +635,6 @@ const App = () => {
         </main>
       </div>
     </div>
-    )
   );
 };
 
