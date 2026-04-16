@@ -1045,14 +1045,8 @@ const App = () => {
                   value={refreshSecInput}
                   onChange={(event) => setRefreshSecInput(event.target.value)}
                 />
-                <button
-                  disabled={!patientName.trim() || !patientDetails.trim()}
-                  className="w-full bg-slate-900 text-white rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-800 transition"
-                  onClick={handleConnect}
-                >
-                  Connect
-                </button>
               </div>
+              <p className="mt-2 text-[11px] text-slate-500">Use the Connect button in the Patient Information section.</p>
               {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
             </section>
           </aside>
@@ -1060,7 +1054,7 @@ const App = () => {
           <main className="space-y-6">
             <section className="rounded-3xl border border-indigo-200 bg-gradient-to-br from-white via-indigo-50 to-sky-50 p-5 shadow-sm">
               <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-700 mb-3">Patient Information & Report</p>
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto] gap-3">
                 <input
                   type="text"
                   placeholder="Patient Name"
@@ -1080,6 +1074,13 @@ const App = () => {
                   className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition"
                 >
                   View Report
+                </button>
+                <button
+                  onClick={handleConnect}
+                  disabled={!patientName.trim() || !patientDetails.trim()}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-800 transition"
+                >
+                  Connect
                 </button>
               </div>
             </section>
