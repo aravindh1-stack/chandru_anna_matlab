@@ -24,6 +24,9 @@ const STORAGE_KEYS = {
   refreshSec: "aarga.thingspeak.refreshSec",
 };
 
+const buildThingSpeakClientUrl = (channelId, readApiKey, results = 30) =>
+  `https://api.thingspeak.com/channels/${encodeURIComponent(channelId)}/feeds.json?results=${results}&api_key=${encodeURIComponent(readApiKey)}`;
+
 const getSeriesStats = (values) => {
   const safeValues = values.filter((value) => Number.isFinite(value));
   if (!safeValues.length) {
@@ -394,7 +397,9 @@ const App = () => {
 
   const [activeChannelId, setActiveChannelId] = useState(channelIdInput);
   const [activeRefreshSec, setActiveRefreshSec] = useState(refreshSecInput);
+  const [activeReadApiKey, setActiveReadApiKey] = useState(readApiKeyInput);
   const [isConnected, setIsConnected] = useState(false);
+  const [useDirectMode, setUseDirectMode] = useState(false);
 
   const [feeds, setFeeds] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -414,14 +419,25 @@ const App = () => {
 
     const fetchData = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/feeds?results=${MAX_RESULTS}`);
-        if (!res.ok) {
-          throw new Error("ThingSpeak request failed");
+        if (useDirectMode) {
+          const directUrl = buildThingSpeakClientUrl(activeChannelId, activeReadApiKey, MAX_RESULTS);
+          const directRes = await fetch(directUrl);
+          if (!directRes.ok) {
+            throw new Error(`ThingSpeak direct request failed (${directRes.status})`);
+          }
+          const directData = await directRes.json();
+          setFeeds(directData.feeds || []);
+          setConnectionStatus("Connected (Direct Mode)");
+        } else {
+          const res = await fetch(`${API_BASE}/api/feeds?results=${MAX_RESULTS}`);
+          if (!res.ok) {
+            throw new Error("ThingSpeak request failed");
+          }
+          const data = await res.json();
+          setFeeds(data.feeds || []);
+          setActiveChannelId(data.channelId || activeChannelId);
+          setConnectionStatus("Connected");
         }
-        const data = await res.json();
-        setFeeds(data.feeds || []);
-        setActiveChannelId(data.channelId || activeChannelId);
-        setConnectionStatus("Connected");
         setError("");
         setApiError("");
       } catch (error) {
@@ -438,7 +454,7 @@ const App = () => {
     const safeRefresh = Math.max(5, Number(activeRefreshSec) || DEFAULT_REFRESH_SEC);
     const interval = setInterval(fetchData, safeRefresh * 1000);
     return () => clearInterval(interval);
-  }, [activeChannelId, activeRefreshSec, isConnected]);
+  }, [activeChannelId, activeReadApiKey, activeRefreshSec, isConnected, useDirectMode]);
 
   const handleConnect = () => {
     if (!patientName.trim()) {
@@ -475,6 +491,30 @@ const App = () => {
     }
 
     const applyConfig = async () => {
+      const connectDirectMode = async () => {
+        const testUrl = buildThingSpeakClientUrl(nextChannel, nextKey, 1);
+        const directResponse = await fetch(testUrl);
+        if (!directResponse.ok) {
+          throw new Error(`ThingSpeak direct auth failed (${directResponse.status})`);
+        }
+        const directData = await directResponse.json();
+        if (directData.status === "0" || directData.error || !directData.channel) {
+          throw new Error("Invalid Channel ID or Read API Key.");
+        }
+
+        localStorage.setItem(STORAGE_KEYS.channelId, nextChannel);
+        localStorage.setItem(STORAGE_KEYS.refreshSec, String(nextRefresh));
+
+        setActiveChannelId(nextChannel);
+        setActiveReadApiKey(nextKey);
+        setActiveRefreshSec(nextRefresh);
+        setUseDirectMode(true);
+        setIsConnected(true);
+        setConnectionStatus("Connected (Direct Mode)");
+        setError("Server API unavailable. Connected via direct ThingSpeak mode.");
+        setApiError("");
+      };
+
       try {
         setConnectionStatus("Verifying...");
         setLoading(true);
@@ -485,12 +525,21 @@ const App = () => {
           body: JSON.stringify({ channelId: nextChannel, readApiKey: nextKey }),
         });
 
-        const data = await response.json();
+        let data = null;
+        try {
+          data = await response.json();
+        } catch {
+          data = null;
+        }
 
         if (!response.ok || !data.ok) {
+          if (response.status >= 500 || response.status === 404 || !data) {
+            await connectDirectMode();
+            return;
+          }
           setConnectionStatus("Authentication Failed");
-          setError(data.error || "Connection rejected by server.");
-          setApiError(data.error || "Authentication failed. Please verify your credentials.");
+          setError((data && data.error) || "Connection rejected by server.");
+          setApiError((data && data.error) || "Authentication failed. Please verify your credentials.");
           setLoading(false);
           setIsConnected(false);
           return;
@@ -500,16 +549,23 @@ const App = () => {
         localStorage.setItem(STORAGE_KEYS.refreshSec, String(nextRefresh));
 
         setActiveChannelId(nextChannel);
+        setActiveReadApiKey(nextKey);
         setActiveRefreshSec(nextRefresh);
+        setUseDirectMode(false);
         setIsConnected(true);
         setError("");
         setApiError("");
-      } catch {
-        setConnectionStatus("Connection Failed");
-        setError("Connection failed. Please verify API deployment and try again.");
-        setApiError("Connection failed. API may not be deployed or network is unavailable.");
+      } catch (error) {
+        try {
+          await connectDirectMode();
+        } catch {
+          setConnectionStatus("Connection Failed");
+          setError("Connection failed. Please verify API deployment and try again.");
+          setApiError("Connection failed. API may not be deployed or network is unavailable.");
+          setIsConnected(false);
+        }
+      } finally {
         setLoading(false);
-        setIsConnected(false);
       }
     };
 
