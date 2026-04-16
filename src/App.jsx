@@ -757,6 +757,24 @@ const App = () => {
     ],
   };
 
+  const lastUpdated = feeds.length ? new Date(feeds[feeds.length - 1].created_at).toLocaleTimeString() : "--:--:--";
+  const readingsToday = feeds.length;
+  const alertsToday = activeAlerts.length;
+  const recoveryScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        100 -
+          (latestSpo2 < ALERT_THRESHOLDS.spo2Low ? (ALERT_THRESHOLDS.spo2Low - latestSpo2) * 3 : 0) -
+          (latestHr > ALERT_THRESHOLDS.hrHigh ? (latestHr - ALERT_THRESHOLDS.hrHigh) * 0.8 : 0) -
+          (latestHr > 0 && latestHr < ALERT_THRESHOLDS.hrLow ? (ALERT_THRESHOLDS.hrLow - latestHr) * 0.8 : 0) -
+          (latestTemp !== null && latestTemp > ALERT_THRESHOLDS.tempHigh ? (latestTemp - ALERT_THRESHOLDS.tempHigh) * 12 : 0)
+      )
+    )
+  );
+  const recoveryBand = recoveryScore >= 85 ? "Good" : recoveryScore >= 65 ? "Observe" : "Critical";
+
   const ReportModal = () => (
     <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
       <div className="w-full max-w-4xl rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -860,7 +878,7 @@ const App = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-white to-indigo-50 p-4 md:p-6">
       {showReportModal && <ReportModal />}
       {shouldShowAlertPopup ? (
         <AlertPopup
@@ -874,205 +892,243 @@ const App = () => {
         />
       ) : null}
 
-      <div className="mx-auto max-w-[1320px] space-y-8">
-        <header className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 md:p-8 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+      <div className="mx-auto max-w-[1500px] space-y-6">
+        <header className="rounded-3xl border border-slate-200 bg-white px-5 py-4 shadow-sm md:px-7 md:py-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-4">
-            <div className="h-14 w-14 rounded-2xl bg-slate-900 text-white flex items-center justify-center">
-              <Activity size={24} />
+            <div className="h-12 w-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-lg">
+              <Activity size={22} />
             </div>
             <div>
-              <p className="text-xs md:text-sm font-semibold uppercase tracking-[0.2em] text-slate-500 mt-1">Cardiac Recovery Monitor</p>
+              <p className="text-xl font-black tracking-tight text-slate-900">CardioWatch AI</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">IoT Cardiac Monitoring System</p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {activeAlerts.length ? <Pill tone="slate">Alert Active: {activeAlerts.length}</Pill> : null}
+          <div className="flex flex-wrap items-center gap-2">
             <Pill tone="emerald">
               <span className="inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-              System Live
+              LIVE MONITORING
             </Pill>
             <Pill>
-              <Clock size={14} />
-              {new Date().toLocaleTimeString()}
+              <Clock size={14} /> Last update {lastUpdated}
             </Pill>
             <Pill tone="indigo">
-              <Wifi size={14} />
-              Channel {isConnected ? activeChannelId : "--"}
+              <Wifi size={14} /> Channel {isConnected ? activeChannelId : "--"}
             </Pill>
-            <Pill tone={connectionStatus === "Connected" ? "emerald" : "slate"}>
-              {connectionStatus}
-            </Pill>
+            <Pill tone={connectionStatus === "Connected" ? "emerald" : "slate"}>{connectionStatus}</Pill>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadReport}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+            >
+              Download PDF
+            </button>
+            <button
+              onClick={handleViewReport}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 transition"
+            >
+              AI Report
+            </button>
           </div>
         </header>
 
-        <section className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-white via-indigo-50 to-sky-50 shadow-sm p-5 md:p-6">
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-700 mb-4">Patient Information & Report</p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <input
-              type="text"
-              placeholder="Patient Name"
-              value={patientName}
-              onChange={(e) => setPatientName(e.target.value)}
-              className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-            />
-            <input
-              type="text"
-              placeholder="Patient Details (Age, ID, etc.)"
-              value={patientDetails}
-              onChange={(e) => setPatientDetails(e.target.value)}
-              className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-            />
-            <button
-              onClick={handleViewReport}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition"
-            >
-              View Report
-            </button>
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5 md:p-6">
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 mb-4">ThingSpeak Connection</p>
-          {!patientName.trim() || !patientDetails.trim() ? (
-            <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 mb-4">
-              <p className="text-sm font-semibold text-yellow-900">⚠️ Patient Information Required</p>
-              <p className="text-xs text-yellow-700 mt-1">Please fill in Patient Name and Patient ID/Details above before connecting.</p>
-            </div>
-          ) : null}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <input
-              className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-              placeholder="Channel ID"
-              value={channelIdInput}
-              onChange={(event) => setChannelIdInput(event.target.value)}
-            />
-            <input
-              className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-              placeholder="Read API Key (for private channels)"
-              value={readApiKeyInput}
-              onChange={(event) => setReadApiKeyInput(event.target.value)}
-            />
-            <input
-              className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-              type="number"
-              min={5}
-              placeholder="Refresh Seconds"
-              value={refreshSecInput}
-              onChange={(event) => setRefreshSecInput(event.target.value)}
-            />
-            <button
-              disabled={!patientName.trim() || !patientDetails.trim()}
-              className="bg-slate-900 text-white rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-800 transition"
-              onClick={handleConnect}
-            >
-              Connect
-            </button>
-          </div>
-          <p className="mt-3 text-xs text-slate-500">
-            Use Channel ID and Read API Key from `thingspeak.mathworks.com`. Data fetch starts only after successful Connect.
-          </p>
-          {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
-        </section>
-
-        <main className="grid grid-cols-1 xl:grid-cols-12 gap-7">
-          <section className="xl:col-span-8 flex flex-col lg:flex-row gap-6">
-            <MetricCard
-              title="SpO2"
-              value={`${latestSpo2.toFixed(0)}%`}
-              unit="Oxygen Saturation"
-              subtitle="Filtered + smoothed from Field 1"
-              icon={<Droplets size={20} />}
-              progressColor="bg-indigo-500"
-              percent={latestSpo2}
-            />
-            <MetricCard
-              title="Heart Rate"
-              value={`${latestHr.toFixed(0)}`}
-              unit="BPM"
-              subtitle="Filtered + smoothed from Field 2"
-              icon={<Activity size={20} />}
-              progressColor="bg-slate-700"
-              percent={(latestHr / 180) * 100}
-            />
-            <MetricCard
-              title="Body Temperature"
-              value={latestTemp === null ? "--" : `${latestTemp.toFixed(1)}°`}
-              unit="Celsius"
-              subtitle="MATLAB converted + smoothed Field 3"
-              icon={<Thermometer size={20} />}
-              progressColor="bg-emerald-500"
-              percent={latestTemp === null ? 0 : (latestTemp / 45) * 100}
-            />
-          </section>
-
-          <section className="xl:col-span-4 space-y-6">
-            <article className="rounded-2xl border border-slate-800 bg-slate-900 text-white p-7 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">Device Status</p>
-              <h3 className="mt-4 text-2xl font-black tracking-tight">Cardiac Band v2</h3>
-              <p className="mt-2 text-sm text-slate-300">Signal processing active with range filtering and smoothing.</p>
-              <div className="mt-6">
-                <div className="flex items-center justify-between text-xs text-slate-300 mb-2">
-                  <span>Signal Strength</span>
-                  <span className="font-bold text-emerald-400">{loading ? "--" : "98%"}</span>
-                </div>
-                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                  <div className="h-full w-[98%] bg-emerald-400 rounded-full" />
-                </div>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm h-fit xl:sticky xl:top-4 xl:self-start xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 flex items-start gap-3">
+              <div className="h-11 w-11 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">P</div>
+              <div>
+                <p className="text-sm font-bold text-slate-900">{patientName.trim() || "Patient"}</p>
+                <p className="text-xs text-slate-500">{patientDetails.trim() || "ID: --"}</p>
+                <p className="mt-1 text-xs font-semibold text-emerald-700">Post-Cardiac Recovery</p>
               </div>
-            </article>
-
-            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-600">Analytics Note</p>
-              <p className="mt-3 text-sm font-semibold leading-relaxed text-slate-800">
-                Real-time telemetry is transformed with MATLAB-equivalent conversion logic to keep temperature interpretation accurate and stable.
-              </p>
-            </article>
-          </section>
-
-          <section className="xl:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <TrendCard
-              title="SpO2 Trend"
-              subTitle="Last 20 feeds • Field 1"
-              options={spo2Options}
-              series={spo2Series}
-              type="line"
-              height={240}
-            />
-            <TrendCard
-              title="Heart Rate Trend"
-              subTitle="Last 20 feeds • Field 2"
-              options={hrOptions}
-              series={hrSeries}
-              type="area"
-              height={240}
-            />
-            <TrendCard
-              title="Temperature Trend"
-              subTitle="Last 20 feeds • Field 3 (MATLAB converted)"
-              options={tempOptions}
-              series={tempSeries}
-              type="line"
-              height={240}
-            />
-            <TrendCard
-              title="Combined Vitals"
-              subTitle="SpO2 + BPM + Temp"
-              options={combinedOptions}
-              series={combinedSeries}
-              type="line"
-              height={240}
-            />
-          </section>
-
-          <section className="xl:col-span-12 rounded-2xl border border-slate-300 bg-slate-100 p-4 md:p-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-700 mb-2">Critical Danger Thresholds (Fixed Clinical Defaults)</p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-slate-800">
-              <p className="rounded-lg border border-slate-300 bg-white px-3 py-2">SpO2 Danger: below {DANGER_LIMITS.spo2Low}%</p>
-              <p className="rounded-lg border border-slate-300 bg-white px-3 py-2">HR Danger: above {DANGER_LIMITS.hrHigh} BPM</p>
-              <p className="rounded-lg border border-slate-300 bg-white px-3 py-2">Temp Danger: above {DANGER_LIMITS.tempHigh} deg C</p>
             </div>
-          </section>
-        </main>
+
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Normal Ranges</p>
+              <div className="space-y-2">
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 flex items-center justify-between"><span>Heart Rate</span><span>{ALERT_THRESHOLDS.hrLow} - {ALERT_THRESHOLDS.hrHigh} BPM</span></div>
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 flex items-center justify-between"><span>SpO2</span><span>Minimum {ALERT_THRESHOLDS.spo2Low}%</span></div>
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 flex items-center justify-between"><span>Temperature</span><span>Maximum {ALERT_THRESHOLDS.tempHigh.toFixed(1)} deg C</span></div>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Quick Stats</p>
+              <div className="space-y-2">
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm flex justify-between"><span>Readings Today</span><span className="font-bold text-slate-900">{readingsToday}</span></div>
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm flex justify-between"><span>Alerts Today</span><span className="font-bold text-rose-700">{alertsToday}</span></div>
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm flex justify-between"><span>Recovery Score</span><span className="font-bold text-indigo-700">{recoveryScore}/100</span></div>
+              </div>
+            </div>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Connection</p>
+              {!patientName.trim() || !patientDetails.trim() ? (
+                <p className="mb-2 rounded-lg bg-yellow-50 border border-yellow-200 px-2 py-1 text-[11px] text-yellow-800">Patient info required before Connect.</p>
+              ) : null}
+              <div className="space-y-2">
+                <input
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm"
+                  placeholder="Channel ID"
+                  value={channelIdInput}
+                  onChange={(event) => setChannelIdInput(event.target.value)}
+                />
+                <input
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm"
+                  placeholder="Read API Key"
+                  value={readApiKeyInput}
+                  onChange={(event) => setReadApiKeyInput(event.target.value)}
+                />
+                <input
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm"
+                  type="number"
+                  min={5}
+                  placeholder="Refresh Seconds"
+                  value={refreshSecInput}
+                  onChange={(event) => setRefreshSecInput(event.target.value)}
+                />
+                <button
+                  disabled={!patientName.trim() || !patientDetails.trim()}
+                  className="w-full bg-slate-900 text-white rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-800 transition"
+                  onClick={handleConnect}
+                >
+                  Connect
+                </button>
+              </div>
+              {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
+            </section>
+          </aside>
+
+          <main className="space-y-6">
+            <section className="rounded-3xl border border-indigo-200 bg-gradient-to-br from-white via-indigo-50 to-sky-50 p-5 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-700 mb-3">Patient Information & Report</p>
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
+                <input
+                  type="text"
+                  placeholder="Patient Name"
+                  value={patientName}
+                  onChange={(e) => setPatientName(e.target.value)}
+                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+                <input
+                  type="text"
+                  placeholder="Patient Details (Age, ID, etc.)"
+                  value={patientDetails}
+                  onChange={(e) => setPatientDetails(e.target.value)}
+                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+                <button
+                  onClick={handleViewReport}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition"
+                >
+                  View Report
+                </button>
+              </div>
+            </section>
+
+            <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              <MetricCard
+                title="Heart Rate"
+                value={`${latestHr.toFixed(0)}`}
+                unit="BPM"
+                subtitle="Filtered + smoothed from Field 2"
+                icon={<Activity size={20} />}
+                progressColor="bg-rose-500"
+                percent={(latestHr / 180) * 100}
+              />
+              <MetricCard
+                title="SpO2"
+                value={`${latestSpo2.toFixed(0)}%`}
+                unit="Oxygen Saturation"
+                subtitle="Filtered + smoothed from Field 1"
+                icon={<Droplets size={20} />}
+                progressColor="bg-indigo-500"
+                percent={latestSpo2}
+              />
+              <MetricCard
+                title="Body Temperature"
+                value={latestTemp === null ? "--" : `${latestTemp.toFixed(1)}°`}
+                unit="Celsius"
+                subtitle="MATLAB converted + smoothed Field 3"
+                icon={<Thermometer size={20} />}
+                progressColor="bg-emerald-500"
+                percent={latestTemp === null ? 0 : (latestTemp / 45) * 100}
+              />
+              <article className="relative overflow-hidden rounded-2xl border border-cyan-200 bg-gradient-to-br from-slate-900 via-slate-800 to-cyan-900 text-white shadow-sm p-6">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-cyan-200">AI Recovery Score</p>
+                <p className="mt-4 text-4xl font-black tracking-tight">{recoveryScore}<span className="text-lg font-bold text-cyan-200">/100</span></p>
+                <p className="mt-2 text-sm font-semibold text-cyan-100">{recoveryBand}</p>
+                <div className="mt-4 h-2 w-full rounded-full bg-white/20 overflow-hidden">
+                  <div className="h-full rounded-full bg-cyan-300" style={{ width: `${recoveryScore}%` }} />
+                </div>
+              </article>
+            </section>
+
+            <section className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <TrendCard
+                title="Heart Rate"
+                subTitle="Live trend • Field 2"
+                options={hrOptions}
+                series={hrSeries}
+                type="area"
+                height={235}
+              />
+              <TrendCard
+                title="SpO2"
+                subTitle="Live trend • Field 1"
+                options={spo2Options}
+                series={spo2Series}
+                type="line"
+                height={235}
+              />
+              <TrendCard
+                title="Body Temperature"
+                subTitle="Live trend • Field 3"
+                options={tempOptions}
+                series={tempSeries}
+                type="line"
+                height={235}
+              />
+              <TrendCard
+                title="Combined Vitals"
+                subTitle="SpO2 + BPM + Temp"
+                options={combinedOptions}
+                series={combinedSeries}
+                type="line"
+                height={235}
+              />
+            </section>
+
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <p className="text-sm font-extrabold uppercase tracking-[0.14em] text-slate-700">Alert Log</p>
+                <p className="text-xs text-slate-500">{alertsToday} active alerts</p>
+              </div>
+              {activeAlerts.length ? (
+                <ul className="space-y-2">
+                  {activeAlerts.map((alert, idx) => (
+                    <li key={idx} className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+                      {alert}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">No alerts - all vitals are within normal range.</p>
+              )}
+            </section>
+
+            <section className="rounded-2xl border border-slate-300 bg-slate-100 p-4 md:p-5">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-700 mb-2">Critical Danger Thresholds (Fixed Clinical Defaults)</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-slate-800">
+                <p className="rounded-lg border border-slate-300 bg-white px-3 py-2">SpO2 Danger: below {DANGER_LIMITS.spo2Low}%</p>
+                <p className="rounded-lg border border-slate-300 bg-white px-3 py-2">HR Danger: above {DANGER_LIMITS.hrHigh} BPM</p>
+                <p className="rounded-lg border border-slate-300 bg-white px-3 py-2">Temp Danger: above {DANGER_LIMITS.tempHigh} deg C</p>
+              </div>
+            </section>
+          </main>
+        </div>
       </div>
     </div>
   );
